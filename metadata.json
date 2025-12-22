@@ -1,0 +1,8 @@
+{
+  "name": "ClarityAI - India's B2B Meeting Copilot",
+  "description": "A high-value B2B tool for Indian SME owners and founders to transform meeting videos into clean, actionable notes and WhatsApp-ready follow-ups.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
