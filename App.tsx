@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
-import { Header } from './components/Header';
-import { UploadZone } from './components/UploadZone';
-import { ProcessingOverlay } from './components/ProcessingOverlay';
-import { MeetingReportDisplay } from './components/MeetingReport';
-import { processMeetingVideo } from './services/gemini';
-import { AppState, MeetingReport } from './types';
+import { Header } from './components/Header.tsx';
+import { UploadZone } from './components/UploadZone.tsx';
+import { ProcessingOverlay } from './components/ProcessingOverlay.tsx';
+import { MeetingReportDisplay } from './components/MeetingReport.tsx';
+import { processMeetingVideo } from './services/gemini.ts';
+import { AppState, MeetingReport } from './types.ts';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>('IDLE');

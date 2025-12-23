@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { MeetingReport } from "../types";
+import { MeetingReport } from "../types.ts";
 
 /**
  * Utility to encode PCM data into a standard WAV format (required for Gemini audio/wav support).
@@ -102,7 +102,8 @@ const sampleFrames = async (file: File, frameCount: number = 8): Promise<string[
  * Handles 2+ hour sessions by decoupling audio and visual data.
  */
 export const processMeetingVideo = async (file: File, updateProgress?: (step: string) => void): Promise<MeetingReport | null> => {
-  const apiKey = process.env.API_KEY;
+  // Use a fallback for environments where process.env is not globally shimmed
+  const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : (window as any).process?.env?.API_KEY;
   if (!apiKey) throw new Error("AUTH_ERROR: System API key missing.");
 
   const ai = new GoogleGenAI({ apiKey });
