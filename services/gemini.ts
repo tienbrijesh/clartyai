@@ -42,8 +42,11 @@ const encodeWAV = (samples: Float32Array, sampleRate: number): Blob => {
  * Extracts the audio track from a video file and downsamples it to 16kHz for efficient processing.
  */
 const extractAudio = async (file: File): Promise<string> => {
-  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
   const arrayBuffer = await file.arrayBuffer();
+  
+  // Note: decodeAudioData can be memory intensive for 2h+ files.
+  // We handle potential errors gracefully in the catch block.
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
   
   const targetSampleRate = 16000;
@@ -59,7 +62,10 @@ const extractAudio = async (file: File): Promise<string> => {
   
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1]);
+    };
     reader.readAsDataURL(wavBlob);
   });
 };
@@ -67,32 +73,39 @@ const extractAudio = async (file: File): Promise<string> => {
 /**
  * Samples key visual frames from the video to provide context for long-form meetings.
  */
-const sampleFrames = async (file: File, frameCount: number = 8): Promise<string[]> => {
-  return new Promise((resolve) => {
+const sampleFrames = async (file: File, frameCount: number = 10): Promise<string[]> => {
+  return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.muted = true;
     video.src = URL.createObjectURL(file);
     
+    video.onerror = () => reject(new Error("VIDEO_LOAD_ERROR: Could not load video for frame sampling."));
+    
     video.onloadedmetadata = async () => {
-      const duration = video.duration;
-      const frames: string[] = [];
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      for (let i = 0; i < frameCount; i++) {
-        const time = (duration / (frameCount + 1)) * (i + 1);
-        video.currentTime = time;
-        await new Promise((r) => (video.onseeked = r));
+      try {
+        const duration = video.duration;
+        const frames: string[] = [];
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
         
-        canvas.width = 640; // Low-res is sufficient for visual cues
-        canvas.height = 360;
-        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        frames.push(canvas.toDataURL('image/jpeg', 0.6).split(',')[1]);
+        for (let i = 0; i < frameCount; i++) {
+          const time = (duration / (frameCount + 1)) * (i + 1);
+          video.currentTime = time;
+          await new Promise((r) => (video.onseeked = r));
+          
+          canvas.width = 640;
+          canvas.height = 360;
+          ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+          frames.push(dataUrl.split(',')[1]);
+        }
+        
+        URL.revokeObjectURL(video.src);
+        resolve(frames);
+      } catch (err) {
+        reject(err);
       }
-      
-      URL.revokeObjectURL(video.src);
-      resolve(frames);
     };
   });
 };
@@ -102,11 +115,8 @@ const sampleFrames = async (file: File, frameCount: number = 8): Promise<string[
  * Handles 2+ hour sessions by decoupling audio and visual data.
  */
 export const processMeetingVideo = async (file: File, updateProgress?: (step: string) => void): Promise<MeetingReport | null> => {
-  // Use a fallback for environments where process.env is not globally shimmed
-  const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : (window as any).process?.env?.API_KEY;
-  if (!apiKey) throw new Error("AUTH_ERROR: System API key missing.");
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Use process.env.API_KEY directly per guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     updateProgress?.("Extracting Acoustic Spectrum...");
@@ -156,7 +166,7 @@ export const processMeetingVideo = async (file: File, updateProgress?: (step: st
   } catch (error: any) {
     console.error("ClarityAI Core Error:", error);
     if (error.message?.includes("decodeAudioData")) {
-      throw new Error("MEDIA_DECODE_FAILED: Browser failed to extract the audio track. Ensure the video has a valid audio stream.");
+      throw new Error("MEMORY_LIMIT_EXCEEDED: This recording is too long for browser-side decoding. Please try uploading a shorter clip (under 90 minutes) or a lower quality audio file.");
     }
     throw new Error(error.message || "SYNTHESIS_FAILED: System encountered an error resolving long-form data.");
   }
