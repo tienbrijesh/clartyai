@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { MeetingReport } from "../types.ts";
 
@@ -50,7 +49,11 @@ const extractAudio = async (file: File): Promise<string> => {
   const wavBlob = encodeWAV(renderedBuffer.getChannelData(0), 16000);
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result.split(',')[1]);
+      }
+    };
     reader.readAsDataURL(wavBlob);
   });
 };
@@ -76,7 +79,8 @@ const sampleFrames = async (file: File, frameCount: number = 8): Promise<string[
         canvas.width = 640;
         canvas.height = 360;
         ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        frames.push(canvas.toDataURL('image/jpeg', 0.5).split(',')[1]);
+        const data = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+        frames.push(data);
       }
       URL.revokeObjectURL(video.src);
       resolve(frames);
@@ -88,7 +92,8 @@ const sampleFrames = async (file: File, frameCount: number = 8): Promise<string[
  * Process a meeting video of any length by distilling it into a Record of Decision.
  */
 export const processMeetingVideo = async (file: File, onProgress?: (step: string) => void): Promise<MeetingReport | null> => {
-  // Directly use process.env.API_KEY as mandated. 
+  // Directly initialize using process.env.API_KEY as per the rules.
+  // We assume this is available in the environment.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
@@ -105,11 +110,11 @@ export const processMeetingVideo = async (file: File, onProgress?: (step: string
         parts: [
           { inlineData: { mimeType: 'audio/wav', data: audioData } },
           ...frameData.map(data => ({ inlineData: { mimeType: 'image/jpeg', data } })),
-          { text: "Generate a comprehensive meeting report from this audio and key frames." }
+          { text: "Generate a comprehensive meeting report from this audio and these key frames. Distill the entire conversation into a definitive 'Record of Decision'." }
         ]
       },
       config: {
-        systemInstruction: "You are an Executive Decision Architect. Distill meeting recordings into a 'Record of Decision'. Focus on consensus, ownership, and clear next steps. Output ONLY valid JSON matching the schema.",
+        systemInstruction: "You are an Executive Decision Architect. Distill meeting recordings into a 'Record of Decision'. Focus on consensus, ownership, and clear next steps. Output ONLY valid JSON matching the provided schema.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -136,14 +141,14 @@ export const processMeetingVideo = async (file: File, onProgress?: (step: string
       }
     });
 
-    if (!response.text) throw new Error("Synthesis failed to return content.");
-    return JSON.parse(response.text) as MeetingReport;
+    const text = response.text;
+    if (!text) throw new Error("Synthesis Engine returned an empty response.");
+    
+    return JSON.parse(text) as MeetingReport;
 
   } catch (error: any) {
     console.error("ClarityAI API Error:", error);
-    if (error.message?.includes("API_KEY") || error.message?.includes("401") || error.message?.includes("403")) {
-      throw new Error("System Authorization Error: The API key is either missing or invalid in this environment.");
-    }
-    throw new Error(error.message || "Synthesis Engine encountered an unexpected error.");
+    // Throw a clean error for the UI state
+    throw new Error(error.message || "The synthesis engine failed to process the meeting data. Please ensure the file is valid and try again.");
   }
 };
